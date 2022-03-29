@@ -36,11 +36,12 @@ class MovieProviderService
 
     /**
      * Given a json string with movies will populate/sync db tables with available data
-     * @see SyncMoviesCommand::MOVIE_FEED_URL for json string
      * @param string $json
+     * @return bool
      * @throws Throwable
+     * @see SyncMoviesCommand::MOVIE_FEED_URL for json string
      */
-    public function getMovies(string $json)
+    public function getMovies(string $json): bool
     {
         try {
             $movies =  json_decode(Helpers::stringToUtf8($json), true);
@@ -121,13 +122,8 @@ class MovieProviderService
                     $this->imageRepo->deleteByFilters([['movie_id', '=',  $movieModel->id]]);
                     $this->imageRepo->updateOrCreateMultipleModelsByIdentifier($imageDTO, 'url', ['movie_id' => $movieModel->id]);
 
-
                     DB::commit();
-                } catch (\Exception $e) {
-                    DB::rollBack();
-                    Log::error($e);
-                    continue;
-                } catch (Throwable $e) {
+                } catch (\Exception | Throwable $e) {
                     DB::rollBack();
                     Log::error($e);
                     continue;

@@ -16,7 +16,7 @@ class MovieDTOTest extends TestCase
     public function testPopulateFromArrayHappyPath()
     {
         /** @see GetFakeMovieData::getMovieArary() */
-        $data = $this->getMovieArary()[0];
+        $data = $this->getMovieArray()[0];
         $movieDTO = app()->make(MovieDTO::class);
         $movieDTO = $movieDTO->populateFromArray($data);
 
@@ -39,7 +39,7 @@ class MovieDTOTest extends TestCase
     public function testPopulateFromArrayInvalidData()
     {
         /** @see GetFakeMovieData::getMovieArary() */
-        $data = $this->getMovieArary()[1];
+        $data = $this->getMovieArray()[1];
         $movieDTO = app()->make(MovieDTO::class);
 
         Log::shouldReceive('error')

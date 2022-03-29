@@ -10,7 +10,7 @@ trait GetFakeMovieData
      * Second document is valid, but duration is not numeric
      * @return mixed
      */
-    private function getMovieArary()
+    private function getMovieArray()
     {
         $movies = '[{
     "body": "This controversial Austrian psychological chiller is a terrifying, persuasive and frighteningly in-your-face look at the escalating violence that can attack when you least expect it.\nIts vile story is brilliantly handled by its writer-director Michael Haneke, but no one can pretend it\'s an easy experience to watch.\nTwo pleasant-looking, credible young blokes (Arno Frisch, Frank Giering) turn up at the lavish lakeside home of a husband and wife holidaying with their young son, but it soon turns out the lads are evil itself and bit by bit they block every move of the couple to get rid of them. Then the real trouble begins.\nSince every detail about the film seems right, it all becomes far too close for comfort, even if it\'s set in far-away Austria and the director makes increasingly frequent \'it\'s only a movie flourishes.\nSuch clever film-making and performing at the service of a sick-making story leaves the audience very queasy indeed.",
