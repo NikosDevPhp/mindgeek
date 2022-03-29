@@ -14,6 +14,11 @@ class GenreDTO extends BaseDTO
         return 'genres';
     }
 
+    /**
+     * Override parent::populateFromArray
+     * @param array|string $data
+     * @return $this|null
+     */
     public function populateFromArray(array|string $data): ?self
     {
         $this->name = $data;

@@ -3,6 +3,7 @@
 namespace App\Objects;
 use App\Attributes\Feed\Field;
 use App\Attributes\Feed\Validate;
+use Illuminate\Contracts\Container\BindingResolutionException;
 
 class MovieDTO extends BaseDTO
 {
@@ -52,6 +53,12 @@ class MovieDTO extends BaseDTO
     public string $year;
 
 
+    /**
+     * Override parent to attach viewingWindowDTO
+     * @param array $data
+     * @return $this|null
+     * @throws BindingResolutionException
+     */
     public function populateFromArray(array $data): ?self
     {
         parent::populateFromArray($data);

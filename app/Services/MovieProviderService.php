@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\Movie;
+use App\Console\Commands\SyncMoviesCommand;
 use App\Objects\CardImageDTO;
 use App\Objects\CastDTO;
 use App\Objects\DirectorDTO;
@@ -10,7 +10,6 @@ use App\Objects\GalleryDTO;
 use App\Objects\GenreDTO;
 use App\Objects\KeyArtImageDTO;
 use App\Objects\MovieDTO;
-use App\Objects\ViewingWindowDTO;
 use App\Repositories\CastRepository;
 use App\Repositories\DirectorRepository;
 use App\Repositories\GalleryRepository;
@@ -18,16 +17,14 @@ use App\Repositories\GenreRepository;
 use App\Repositories\ImageRepository;
 use App\Repositories\MovieRepository;
 use App\Utils\Helpers;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class MovieProviderService
 {
-    private const MOVIE_FEED_URL='https://mgtechtest.blob.core.windows.net/files/showcase.json';
-
     public function __construct(
         private MovieRepository    $movieRepo,
         private CastRepository     $castRepo,
@@ -37,129 +34,109 @@ class MovieProviderService
         private GalleryRepository  $galleryRepo
     ){}
 
-    public function getMovies()
+    /**
+     * Given a json string with movies will populate/sync db tables with available data
+     * @see SyncMoviesCommand::MOVIE_FEED_URL for json string
+     * @param string $json
+     * @throws Throwable
+     */
+    public function getMovies(string $json)
     {
         try {
-            $response = Http::get(self::MOVIE_FEED_URL);
-            $movies =  json_decode(Helpers::stringToUtf8($response->body()), true);
+            $movies =  json_decode(Helpers::stringToUtf8($json), true);
 
             foreach ($movies as $movie) {
                 // keep only valid cardImages
-                foreach ($movie['cardImages'] as $key => $image) {
-                    $imageResponse = Http::get($image['url']);
+                if(isset($movie['cardImages']) && is_array($movie['cardImages'])) {
+                    foreach ($movie['cardImages'] as $key => $image) {
+                        $imageResponse = Http::get($image['url']);
 
-                    if ($imageResponse->status() === 200) {
-                        $uniqId = Helpers::generateUniqIdFromImageUrl($image['url']);
-                        Storage::put($uniqId, $imageResponse->body());
-                        $movie['cardImages'][$key]['path'] = $uniqId;
-                    } else {
-                        unset($movie['cardImages'][$key]);
+                        if ($imageResponse->status() === 200) {
+                            $uniqId = Helpers::generateUniqIdFromImageUrl($image['url']);
+                            Storage::put('public/' . $uniqId, $imageResponse->body());
+                            $movie['cardImages'][$key]['path'] = $uniqId;
+                        } else {
+                            unset($movie['cardImages'][$key]);
+                        }
                     }
                 }
+
 
                 // keep only valid keyArtImages
-                foreach ($movie['keyArtImages'] as $key => $image) {
-                    $imageResponse = Http::get($image['url']);
+                if (isset($movie['keyArtImages']) && is_array($movie['keyArtImages'])) {
+                    foreach ($movie['keyArtImages'] as $key => $image) {
+                        $imageResponse = Http::get($image['url']);
 
-                    if ($imageResponse->status() === 200) {
-                        $uniqId = Helpers::generateUniqIdFromImageUrl($image['url']);
-                        Storage::put($uniqId, $imageResponse->body());
-                        $movie['keyArtImages'][$key]['path'] = $uniqId;
-                    } else {
-                        unset($movie['keyArtImages'][$key]);
+                        if ($imageResponse->status() === 200) {
+                            $uniqId = Helpers::generateUniqIdFromImageUrl($image['url']);
+                            Storage::put('public/' .$uniqId, $imageResponse->body());
+                            $movie['keyArtImages'][$key]['path'] = $uniqId;
+                        } else {
+                            unset($movie['keyArtImages'][$key]);
+                        }
                     }
                 }
 
-
+                // remove 'Gallery:' from start of string
+                if (isset($movie['galleries']['title']) && is_string($movie['galleries']['title'])) {
+                    $movie['galleries']['title'] = Helpers::removeKeywordFromString(
+                        $movie['galleries']['title'],
+                        'Gallery:'
+                    );
+                }
                 try {
-//                    if ($key < 39) {
-//                        continue;
-//                    }
 
 
                     DB::beginTransaction();
+                    // 1. update movie
                     $movieDTO = (new MovieDTO())->populateFromArray($movie);
-                    $directors = (new DirectorDTO())->populateFromCollection($movie);
-                    $cast = (new CastDTO())->populateFromCollection($movie);
+                    $movieModel = $this->movieRepo->updateOrCreateByIdentifier($movieDTO, 'feedId');
 
-                    $mov = $this->movieRepo->updateOrCreateByIdentifier($movieDTO, 'feedId');
+                    // 2. sync directors
+                    $directorsDTO = (new DirectorDTO())->populateFromCollection($movie);
+                    $directorsCollection = $this->directorRepo->updateOrCreateMultipleModelsByIdentifier($directorsDTO, 'name');
+                    $this->directorRepo->syncCollectionToModel($movieModel, 'directors', $directorsCollection);
 
-                    $cas = $this->castRepo->updateOrCreateMultipleModelsByIdentifier($cast, 'name');
-                    $this->castRepo->syncCollectionToModel($mov, 'casts', $cas);
+                    // 3. sync cast
+                    $castDTO = (new CastDTO())->populateFromCollection($movie);
+                    $castCollection = $this->castRepo->updateOrCreateMultipleModelsByIdentifier($castDTO, 'name');
+                    $this->castRepo->syncCollectionToModel($movieModel, 'casts', $castCollection);
 
-                    $dir = $this->directorRepo->updateOrCreateMultipleModelsByIdentifier($directors, 'name');
-                    $this->directorRepo->syncCollectionToModel($mov, 'directors', $dir);
-
+                    // 4. sync genres
                     $genreDTO = (new GenreDTO())->populateFromCollection($movie);
-                    $gen = $this->genreRepo->updateOrCreateMultipleModelsByIdentifier($genreDTO, 'name');
-                    $this->genreRepo->syncCollectionToModel($mov, 'genres', $gen);
+                    $genreCollection = $this->genreRepo->updateOrCreateMultipleModelsByIdentifier($genreDTO, 'name');
+                    $this->genreRepo->syncCollectionToModel($movieModel, 'genres', $genreCollection);
 
+                    // 5. sync gallery - manually add movie_id to collection
                     $galleryDTO = (new GalleryDTO())->populateFromCollection($movie);
-                    Helpers::addPropertyToCollectionOfObjects($galleryDTO, 'movie_id', $mov->id);
+                    Helpers::addPropertyToCollectionOfObjects($galleryDTO, 'movie_id', $movieModel->id);
+                    // manually sync one to many relationship
+                    $this->galleryRepo->deleteByFilters([['movie_id', '=',  $movieModel->id]]);
+                    $this->galleryRepo->updateOrCreateMultipleModelsByIdentifier($galleryDTO, 'title');
 
-
-                    $gal = $this->galleryRepo->updateOrCreateMultipleModelsByIdentifier($galleryDTO, 'title');
-
+                    // 6. sync images - manually add movie_id to collection
                     $imageDTO = (new CardImageDTO())->populateFromCollection($movie)
                         ->merge((new KeyArtImageDTO())->populateFromCollection($movie));
+                    Helpers::addPropertyToCollectionOfObjects($imageDTO, 'movie_id', $movieModel->id);
+                    $this->imageRepo->deleteByFilters([['movie_id', '=',  $movieModel->id]]);
+                    $this->imageRepo->updateOrCreateMultipleModelsByIdentifier($imageDTO, 'url', ['movie_id' => $movieModel->id]);
 
-                    Helpers::addPropertyToCollectionOfObjects($imageDTO, 'movie_id', $mov->id);
 
-
-                    $img = $this->imageRepo->updateOrCreateMultipleModelsByIdentifier($imageDTO, 'url', ['movie_id' => $mov->id]);
                     DB::commit();
-                    $x =5;
                 } catch (\Exception $e) {
                     DB::rollBack();
-                    Log::error($e->getMessage());
-                    exit;
+                    Log::error($e);
                     continue;
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     DB::rollBack();
-                    Log::error($e->getMessage());
-                    exit;
+                    Log::error($e);
+                    continue;
                 }
-
-
-//                if(isset($movie['videos'])) {
-//                    foreach ($movie['videos'] as $video) {
-//                        if (isset($video['url'])) {
-//                            $videoResponse = Http::get($video['url']);
-//                            if ($videoResponse->status() === 200) {
-////                                Storage::put($movie['id'] . '_video_' . '.mp4', $videoResponse->body());
-//                            }
-//                        }
-//
-//                        if (isset($video['alternatives'])) {
-//                            foreach ($video['alternatives'] as $alternative) {
-//                                $videoResponse = Http::get($video['url']);
-//                                if ($videoResponse->status() === 200) {
-////                                    Storage::put($movie['id'] . '_video_alt_' . '.mp4', $videoResponse->body());
-//                                }
-//                            }
-//                        }
-//                    }
-//                }
-
             }
-            dd($movies);
         } catch (\Exception $e) {
-            Log::error($e->getMessage());
+            Log::error($e);
+            return false;
         }
-    }
-
-    public function array_keys_multi(array $array)
-    {
-        $keys = array();
-
-        foreach ($array as $key => $value) {
-            $keys[] = $key;
-
-            if (is_array($value)) {
-                $keys = array_merge($keys, $this->array_keys_multi($value));
-            }
-        }
-
-        return $keys;
+        return true;
     }
 }

@@ -10,11 +10,21 @@ use ReflectionProperty;
 
 abstract class BaseDTO
 {
+    /**
+     * Override in child class to specify the key name in the feed
+     * @return string|null
+     */
     protected function feedKey(): ?string
     {
         return null;
     }
 
+    /**
+     * Populate DTO fields checking `field` existence and running validations
+     * skipping any field that are invalid/do not exist
+     * @param array $data
+     * @return $this|null
+     */
     public function populateFromArray(array $data): ?self
     {
         $reflection = new \ReflectionObject($this);
@@ -23,47 +33,47 @@ abstract class BaseDTO
             // skip properties without attributes
             try {
                 $propertyField = $property->getAttributes(Field::class)[0];
+                $propertyValidate = $property->getAttributes(Validate::class)[0];
             } catch (\ErrorException $e) {
+                Log::info('Property with no attributes skipped: ' . $property->getName());
                 continue;
             }
 
             $feedField = $propertyField->getArguments()[0];
+            $validateField = $propertyValidate->getArguments()[0];
 
             // check that attributes declaration in class properties is valid
-            if (!is_string($feedField)) {
+            if (!is_string($feedField) || !is_string($validateField)) {
                 Log::error('Malformed attribute for ' . $property->getName());
-                return null;
+                continue;
             }
-
 
             // check if attribute exists in feed else do not initialize
             if (!isset($data[$feedField])) {
                 continue;
             }
 
-            $attributes = $property->getAttributes();
-            foreach ($attributes as $attribute) {
-                $input = $attribute->newInstance()->input;
-
-                // set the property field
-                if ($attribute->getName() === Field::class) {
-                    $this->{$property->getName()} = $data[$input];
-                }
-
-                // run the validations
-                if ($attribute->getName() === Validate::class) {
-                    $v = validator($data, [$feedField => $attribute->newInstance()->input]);
-                    if ($v->fails()) {
-                        Log::error('Invalid data provided for field ' . $property->getName());
-                        return null;
-                    }
-                }
+            $input = $propertyValidate->newInstance()->input;
+            $v = validator($data, [$feedField => $input]);
+            if ($v->fails()) {
+                Log::error('Invalid data provided for field ' . $property->getName());
+                continue;
             }
 
+            // if everything is ok initialize the property and assign the value
+            $input = $propertyField->newInstance()->input;
+            $this->{$property->getName()} = $data[$input];
+
         }
+
         return $this;
     }
 
+    /**
+     * Populates a collection of DTOs
+     * @param array $data
+     * @return Collection|null
+     */
     public function populateFromCollection(array $data): ?Collection
     {
         $return = collect();

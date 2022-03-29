@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -13,8 +14,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/', function () {
-    $movieProviderService = app()->make(\App\Services\MovieProviderService::class);
-    $x = $movieProviderService->getMovies();
-    return view('welcome');
-});
+Route::get('/', [Controller::class, 'index']);
+Route::get('/movie/{id}', [Controller::class, 'get'])
+    ->name('getMovie')
+    ->where(['id' => '[0-9]+']);

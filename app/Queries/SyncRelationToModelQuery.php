@@ -16,6 +16,7 @@ class SyncRelationToModelQuery
     private string $relation;
 
     /**
+     * Dynamically calls sync method on many-to-many relations
      * @throws Exception
      */
     public function execute()
