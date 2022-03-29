@@ -85,8 +85,8 @@ class MovieProviderService
                         'Gallery:'
                     );
                 }
+                // TODO: get also videos from feed with the same logic
                 try {
-
 
                     DB::beginTransaction();
                     // 1. update movie
