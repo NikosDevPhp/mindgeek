@@ -15,8 +15,14 @@ return new class extends Migration
     {
         Schema::create('cast_movie', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger('movie_id');
-            $table->bigInteger('cast_id');
+            $table->unsignedBigInteger('movie_id');
+            $table->foreign('movie_id')
+                ->references('id')
+                ->on('movies')->onDelete('cascade');
+            $table->unsignedBigInteger('cast_id');
+            $table->foreign('cast_id')
+                ->references('id')
+                ->on('cast')->onDelete('cascade');
             $table->timestamps();
         });
     }
